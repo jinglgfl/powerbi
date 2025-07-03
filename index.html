@@ -61,12 +61,19 @@
   const loginButton = document.getElementById("loginButton");
   const reportContainer = document.getElementById("reportContainer");
 
+  let embeddedReport = null;  // Will hold the embedded report object
+  let refreshIntervalId = null; // Store interval ID so we could clear if needed
+
   // === Helper: embed report with access token ===
   function embedReport(accessToken) {
+    // Reset existing report and clear any prior interval
     powerbi.reset(reportContainer);
+    if (refreshIntervalId) {
+      clearInterval(refreshIntervalId);
+      refreshIntervalId = null;
+    }
 
     const embedUrl = `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}`;
-
     const models = window["powerbi-client"].models;
 
     const embedConfig = {
@@ -86,7 +93,24 @@
       },
     };
 
-    powerbi.embed(reportContainer, embedConfig);
+    // Embed the report and keep the reference
+    embeddedReport = powerbi.embed(reportContainer, embedConfig);
+
+    // Attach event handlers
+    embeddedReport.on('loaded', function() {
+      console.log('Report loaded');
+    });
+
+    embeddedReport.on('error', function(event) {
+      console.error(event.detail);
+    });
+
+    // Refresh visuals every 30 seconds
+    refreshIntervalId = setInterval(() => {
+      embeddedReport.refresh()
+        .then(() => console.log('Report refreshed'))
+        .catch(error => console.error('Error refreshing report:', error));
+    }, 30000);
   }
 
   // === Sign in the user and get token ===
