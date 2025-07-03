@@ -18,7 +18,7 @@
       width: 100vw;
       height: 100vh;
     }
-    #loginButton, #logoutButton {
+    #loginButton {
       position: fixed;
       top: 10px;
       right: 10px;
@@ -30,9 +30,6 @@
       font-size: 14px;
       border-radius: 4px;
       z-index: 1000;
-    }
-    #logoutButton {
-      right: 120px;
     }
   </style>
 </head>
@@ -62,12 +59,10 @@
   const msalInstance = new msal.PublicClientApplication(msalConfig);
 
   const loginButton = document.getElementById("loginButton");
-  const logoutButton = document.getElementById("logoutButton");
   const reportContainer = document.getElementById("reportContainer");
 
   // === Helper: embed report with access token ===
   function embedReport(accessToken) {
-    // Clear previous embed if any
     powerbi.reset(reportContainer);
 
     const embedUrl = `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}`;
@@ -104,7 +99,6 @@
       console.log("Login success:", loginResponse);
 
       loginButton.style.display = "none";
-      logoutButton.style.display = "inline-block";
 
       const account = loginResponse.account;
       msalInstance.setActiveAccount(account);
@@ -123,22 +117,8 @@
     }
   }
 
-  // === Sign out ===
-  function signOut() {
-    const account = msalInstance.getActiveAccount();
-    if (account) {
-      msalInstance.logoutPopup({
-        account: account,
-      });
-    }
-    loginButton.style.display = "inline-block";
-    logoutButton.style.display = "none";
-    powerbi.reset(reportContainer);
-  }
-
-  // === Wire up buttons ===
+  // === Wire up button ===
   loginButton.addEventListener("click", signIn);
-  logoutButton.addEventListener("click", signOut);
 
   // === On page load, check if user is already signed in ===
   window.onload = async () => {
@@ -151,12 +131,10 @@
           account: accounts[0],
         });
         loginButton.style.display = "none";
-        logoutButton.style.display = "inline-block";
         embedReport(tokenResponse.accessToken);
       } catch {
         // Token silent acquisition failed - user interaction needed
         loginButton.style.display = "inline-block";
-        logoutButton.style.display = "none";
       }
     }
   };
