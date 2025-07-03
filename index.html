@@ -40,7 +40,6 @@
 <div id="reportContainer"></div>
 
 <script>
-  // === Config - Replace these values with your own ===
   const msalConfig = {
     auth: {
       clientId: "126b1e36-bd92-431a-b49f-c75397c1ab9e",
@@ -51,22 +50,18 @@
 
   const powerBiScopes = ["https://analysis.windows.net/powerbi/api/Report.Read.All"];
 
-  // Power BI Report info
   const reportId = "d18f0783-b15b-4f2d-b3de-44dab4d14daf";
   const groupId = "20e6d339-83d1-4f87-8366-cea0568d16ee";
 
-  // === Initialize MSAL ===
   const msalInstance = new msal.PublicClientApplication(msalConfig);
 
   const loginButton = document.getElementById("loginButton");
   const reportContainer = document.getElementById("reportContainer");
 
-  let embeddedReport = null;  // Will hold the embedded report object
-  let refreshIntervalId = null; // Store interval ID so we could clear if needed
+  let embeddedReport = null;
+  let refreshIntervalId = null;
 
-  // === Helper: embed report with access token ===
   function embedReport(accessToken) {
-    // Reset existing report and clear any prior interval
     powerbi.reset(reportContainer);
     if (refreshIntervalId) {
       clearInterval(refreshIntervalId);
@@ -93,33 +88,61 @@
       },
     };
 
-    // Embed the report and keep the reference
     embeddedReport = powerbi.embed(reportContainer, embedConfig);
 
-    // Attach event handlers
-    embeddedReport.on('loaded', function() {
+    embeddedReport.on('loaded', () => {
       console.log('Report loaded');
     });
 
-    embeddedReport.on('error', function(event) {
+    embeddedReport.on('error', (event) => {
       console.error(event.detail);
     });
 
-    // Refresh visuals every 60 seconds
-    refreshIntervalId = setInterval(() => {
-      embeddedReport.refresh()
-        .then(() => console.log('Report refreshed'))
-        .catch(error => console.error('Error refreshing report:', error));
+    // Refresh visuals every 60 seconds with refreshed token
+    refreshIntervalId = setInterval(async () => {
+      try {
+        const account = msalInstance.getActiveAccount();
+        if (!account) {
+          console.warn("No active account - clearing report and showing login button");
+          powerbi.reset(reportContainer);
+          loginButton.style.display = "inline-block";
+          clearInterval(refreshIntervalId);
+          return;
+        }
+        const newAccessToken = await acquireTokenSilentOrPopup(account);
+        embeddedReport.setAccessToken(newAccessToken);
+        await embeddedReport.refresh();
+        console.log('Report refreshed with new token');
+      } catch (err) {
+        console.error('Error refreshing report:', err);
+      }
     }, 60000);
   }
 
-  // === Sign in the user and get token ===
+  // Try silent token acquisition, fallback to popup if it fails
+  async function acquireTokenSilentOrPopup(account) {
+    try {
+      const response = await msalInstance.acquireTokenSilent({
+        scopes: powerBiScopes,
+        account: account,
+      });
+      console.log("Silent token acquired");
+      return response.accessToken;
+    } catch (silentError) {
+      console.warn("Silent token acquisition failed, falling back to popup", silentError);
+      const response = await msalInstance.acquireTokenPopup({
+        scopes: powerBiScopes,
+      });
+      console.log("Popup token acquired");
+      return response.accessToken;
+    }
+  }
+
   async function signIn() {
     try {
       const loginResponse = await msalInstance.loginPopup({
         scopes: powerBiScopes,
       });
-
       console.log("Login success:", loginResponse);
 
       loginButton.style.display = "none";
@@ -127,37 +150,26 @@
       const account = loginResponse.account;
       msalInstance.setActiveAccount(account);
 
-      const tokenResponse = await msalInstance.acquireTokenSilent({
-        scopes: powerBiScopes,
-        account: account,
-      });
+      const accessToken = await acquireTokenSilentOrPopup(account);
 
-      console.log("Token acquired silently:", tokenResponse.accessToken);
-
-      embedReport(tokenResponse.accessToken);
+      embedReport(accessToken);
     } catch (error) {
       console.error("Login or token acquisition failed:", error);
       alert("Login failed. See console for details.");
     }
   }
 
-  // === Wire up button ===
   loginButton.addEventListener("click", signIn);
 
-  // === On page load, check if user is already signed in ===
   window.onload = async () => {
     const accounts = msalInstance.getAllAccounts();
     if (accounts.length > 0) {
       msalInstance.setActiveAccount(accounts[0]);
       try {
-        const tokenResponse = await msalInstance.acquireTokenSilent({
-          scopes: powerBiScopes,
-          account: accounts[0],
-        });
+        const accessToken = await acquireTokenSilentOrPopup(accounts[0]);
         loginButton.style.display = "none";
-        embedReport(tokenResponse.accessToken);
+        embedReport(accessToken);
       } catch {
-        // Token silent acquisition failed - user interaction needed
         loginButton.style.display = "inline-block";
       }
     }
