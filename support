@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Power BI Embed with Azure AD Login</title>
+  <script src="https://alcdn.msauth.net/browser/2.37.0/js/msal-browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/powerbi-client/dist/powerbi.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #111217;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+    #reportContainer {
+      width: 100vw;
+      height: 100vh;
+    }
+    #loginButton, #logoutButton {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      padding: 8px 16px;
+      background: #0078d7;
+      border: none;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      border-radius: 4px;
+      z-index: 1000;
+    }
+    #logoutButton {
+      right: 120px;
+    }
+  </style>
+</head>
+<body>
+
+<button id="loginButton">Sign In</button>
+<button id="logoutButton" style="display:none;">Sign Out</button>
+
+<div id="reportContainer"></div>
+
+<script>
+  // === Config - Replace these values with your own ===
+  const msalConfig = {
+    auth: {
+      clientId: "126b1e36-bd92-431a-b49f-c75397c1ab9e",
+      redirectUri: window.location.origin,
+      authority: "https://login.microsoftonline.com/f1093b3c-cd4b-425b-bce8-b5c5dac62269"
+    }
+  };
+
+  const powerBiScopes = ["https://analysis.windows.net/powerbi/api/.default"];
+
+  // Power BI Report info
+  const reportId = "e60e919a-709c-4efe-be97-50ad6b27fb3d";
+  const groupId = "ef57c655-9f6b-4bb3-9cfb-f2e76455adcd";
+
+  // === Initialize MSAL ===
+  const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+  const loginButton = document.getElementById("loginButton");
+  const logoutButton = document.getElementById("logoutButton");
+  const reportContainer = document.getElementById("reportContainer");
+
+  // === Helper: embed report with access token ===
+  function embedReport(accessToken) {
+    // Clear previous embed if any
+    powerbi.reset(reportContainer);
+
+    const embedUrl = `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}`;
+
+    const models = window["powerbi-client"].models;
+
+    const embedConfig = {
+      type: "report",
+      id: reportId,
+      embedUrl: embedUrl,
+      accessToken: accessToken,
+      tokenType: models.TokenType.Aad,
+      settings: {
+        filterPaneEnabled: false,
+        navContentPaneEnabled: false,
+        background: models.BackgroundType.Transparent,
+        layoutType: models.LayoutType.Custom,
+        customLayout: {
+          displayOption: models.DisplayOption.FitToPage,
+        },
+      },
+    };
+
+    powerbi.embed(reportContainer, embedConfig);
+  }
+
+  // === Sign in the user and get token ===
+  async function signIn() {
+    try {
+      const loginResponse = await msalInstance.loginPopup({
+        scopes: powerBiScopes,
+      });
+
+      console.log("Login success:", loginResponse);
+
+      loginButton.style.display = "none";
+      logoutButton.style.display = "inline-block";
+
+      const account = loginResponse.account;
+      msalInstance.setActiveAccount(account);
+
+      const tokenResponse = await msalInstance.acquireTokenSilent({
+        scopes: powerBiScopes,
+        account: account,
+      });
+
+      console.log("Token acquired silently:", tokenResponse.accessToken);
+
+      embedReport(tokenResponse.accessToken);
+    } catch (error) {
+      console.error("Login or token acquisition failed:", error);
+      alert("Login failed. See console for details.");
+    }
+  }
+
+  // === Sign out ===
+  function signOut() {
+    const account = msalInstance.getActiveAccount();
+    if (account) {
+      msalInstance.logoutPopup({
+        account: account,
+      });
+    }
+    loginButton.style.display = "inline-block";
+    logoutButton.style.display = "none";
+    powerbi.reset(reportContainer);
+  }
+
+  // === Wire up buttons ===
+  loginButton.addEventListener("click", signIn);
+  logoutButton.addEventListener("click", signOut);
+
+  // === On page load, check if user is already signed in ===
+  window.onload = async () => {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      msalInstance.setActiveAccount(accounts[0]);
+      try {
+        const tokenResponse = await msalInstance.acquireTokenSilent({
+          scopes: powerBiScopes,
+          account: accounts[0],
+        });
+        loginButton.style.display = "none";
+        logoutButton.style.display = "inline-block";
+        embedReport(tokenResponse.accessToken);
+      } catch {
+        // Token silent acquisition failed - user interaction needed
+        loginButton.style.display = "inline-block";
+        logoutButton.style.display = "none";
+      }
+    }
+  };
+</script>
+
+</body>
+</html>
