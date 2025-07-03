@@ -105,12 +105,12 @@
       console.error(event.detail);
     });
 
-    // Refresh visuals every 30 seconds
+    // Refresh visuals every 60 seconds
     refreshIntervalId = setInterval(() => {
       embeddedReport.refresh()
         .then(() => console.log('Report refreshed'))
         .catch(error => console.error('Error refreshing report:', error));
-    }, 30000);
+    }, 60000);
   }
 
   // === Sign in the user and get token ===
