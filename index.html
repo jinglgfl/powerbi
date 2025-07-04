@@ -1,200 +1,359 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <title>LGfL Support Site BI Statss</title>
-  <script src="https://alcdn.msauth.net/browser/2.37.0/js/msal-browser.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/powerbi-client/dist/powerbi.min.js"></script>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background-color: #111217;
-      color: white;
-      font-family: Arial, sans-serif;
-    }
-    #reportContainer {
-      width: 100vw;
-      height: 100vh;
-    }
-    #loginButton {
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      padding: 8px 16px;
-      background: #0078d7;
-      border: none;
-      color: white;
-      cursor: pointer;
-      font-size: 14px;
-      border-radius: 4px;
-      z-index: 1000;
-    }
-  </style>
+
+  <meta charset="UTF-8" />
+
+  <title>LGfL Support Site BI Stats</title>
+
+  <script src="https://alcdn.msauth.net/browser/2.37.0/js/msal-browser.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/powerbi-client/dist/powerbi.min.js"></script>
+
+  <style>
+
+    body {
+
+      margin: 0;
+
+      padding: 0;
+
+      overflow: hidden;
+
+      background-color: #111217;
+
+      color: white;
+
+      font-family: Arial, sans-serif;
+
+    }
+
+    #reportContainer {
+
+      width: 100vw;
+
+      height: 100vh;
+
+    }
+
+    #loginButton {
+
+      position: fixed;
+
+      top: 10px;
+
+      right: 10px;
+
+      padding: 8px 16px;
+
+      background: #0078d7;
+
+      border: none;
+
+      color: white;
+
+      cursor: pointer;
+
+      font-size: 14px;
+
+      border-radius: 4px;
+
+      z-index: 1000;
+
+    }
+
+  </style>
+
 </head>
+
 <body>
 
-<button id="loginButton" style="display: none;">Sign In</button> <div id="reportContainer"></div>
+
+
+<button id="loginButton">Sign In</button>
+
+
+
+<div id="reportContainer"></div>
+
+
 
 <script>
-  const msalConfig = {
-    auth: {
-      clientId: "126b1e36-bd92-431a-b49f-c75397c1ab9e",
-      redirectUri: "https://jinglgfl.github.io/powerbi/",
-      authority: "https://login.microsoftonline.com/f1093b3c-cd4b-425b-bce8-b5c5dac62269"
-    }
-  };
 
-  const powerBiScopes = ["https://analysis.windows.net/powerbi/api/Report.Read.All"];
+  const msalConfig = {
 
-  const reportId = "d18f0783-b15b-4f2d-b3de-44dab4d14daf";
-  const groupId = "20e6d339-83d1-4f87-8366-cea0568d16ee";
+    auth: {
 
-  const msalInstance = new msal.PublicClientApplication(msalConfig);
+      clientId: "126b1e36-bd92-431a-b49f-c75397c1ab9e",
 
-  const loginButton = document.getElementById("loginButton");
-  const reportContainer = document.getElementById("reportContainer");
+      redirectUri: "https://jinglgfl.github.io/powerbi/",
 
-  let embeddedReport = null;
-  let refreshIntervalId = null;
+      authority: "https://login.microsoftonline.com/f1093b3c-cd4b-425b-bce8-b5c5dac62269"
 
-  function embedReport(accessToken) {
-    powerbi.reset(reportContainer);
-    if (refreshIntervalId) {
-      clearInterval(refreshIntervalId);
-      refreshIntervalId = null;
-    }
+    }
 
-    const embedUrl = `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}`;
-    const models = window["powerbi-client"].models;
+  };
 
-    const embedConfig = {
-      type: "report",
-      id: reportId,
-      embedUrl: embedUrl,
-      accessToken: accessToken,
-      tokenType: models.TokenType.Aad,
-      settings: {
-        filterPaneEnabled: false,
-        navContentPaneEnabled: false,
-        background: models.BackgroundType.Transparent,
-        layoutType: models.LayoutType.Custom,
-        customLayout: {
-          displayOption: models.DisplayOption.FitToPage,
-        },
-      },
-    };
 
-    embeddedReport = powerbi.embed(reportContainer, embedConfig);
 
-    embeddedReport.on('loaded', () => {
-      console.log('Report loaded');
-    });
+  const powerBiScopes = ["https://analysis.windows.net/powerbi/api/Report.Read.All"];
 
-    embeddedReport.on('error', (event) => {
-      console.error(event.detail);
-      // If there's an error during embed (e.g., token expired), show login button
-      loginButton.style.display = "inline-block";
-    });
 
-    // Refresh visuals every 60 seconds with refreshed token
-    refreshIntervalId = setInterval(async () => {
-      try {
-        const account = msalInstance.getActiveAccount();
-        if (!account) {
-          console.warn("No active account - clearing report and showing login button");
-          powerbi.reset(reportContainer);
-          loginButton.style.display = "inline-block";
-          clearInterval(refreshIntervalId);
-          return;
-        }
-        const newAccessToken = await acquireTokenSilentOrPopup(account);
-        embeddedReport.setAccessToken(newAccessToken);
-        await embeddedReport.refresh();
-        console.log('Report refreshed with new token');
-      } catch (err) {
-        console.error('Error refreshing report:', err);
-        // If refresh fails, consider re-showing login button
-        loginButton.style.display = "inline-block";
-        clearInterval(refreshIntervalId);
-      }
-    }, 60000);
-  }
 
-  // Try silent token acquisition, fallback to popup if it fails
-  async function acquireTokenSilentOrPopup(account) {
-    try {
-      const response = await msalInstance.acquireTokenSilent({
-        scopes: powerBiScopes,
-        account: account,
-      });
-      console.log("Silent token acquired");
-      return response.accessToken;
-    } catch (silentError) {
-      console.warn("Silent token acquisition failed, falling back to popup", silentError);
-      // For auto-sign-in on page load, we want to initiate a popup directly if silent fails.
-      // This is the key change.
-      const response = await msalInstance.acquireTokenPopup({
-        scopes: powerBiScopes,
-      });
-      console.log("Popup token acquired");
-      return response.accessToken;
-    }
-  }
+  const reportId = "d18f0783-b15b-4f2d-b3de-44dab4d14daf";
 
-  async function signIn() {
-    try {
-      // Use loginPopup for initial interactive login
-      const loginResponse = await msalInstance.loginPopup({
-        scopes: powerBiScopes,
-      });
-      console.log("Login success:", loginResponse);
+  const groupId = "20e6d339-83d1-4f87-8366-cea0568d16ee";
 
-      loginButton.style.display = "none";
 
-      const account = loginResponse.account;
-      msalInstance.setActiveAccount(account);
 
-      const accessToken = await acquireTokenSilentOrPopup(account); // This will try silent, then popup if necessary
+  const msalInstance = new msal.PublicClientApplication(msalConfig);
 
-      embedReport(accessToken);
-    } catch (error) {
-      console.error("Login or token acquisition failed:", error);
-      alert("Login failed. See console for details.");
-      loginButton.style.display = "inline-block"; // Ensure button is shown if login fails
-    }
-  }
 
-  loginButton.addEventListener("click", signIn);
 
-  window.onload = async () => {
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length > 0) {
-      msalInstance.setActiveAccount(accounts[0]);
-      try {
-        const accessToken = await acquireTokenSilentOrPopup(accounts[0]);
-        loginButton.style.display = "none";
-        embedReport(accessToken);
-      } catch (error) {
-        // If silent or popup token acquisition fails for an existing account,
-        // it means the session is truly dead or requires re-authentication.
-        // In this case, we would show the login button.
-        console.warn("Could not acquire token for existing account, prompting full sign-in.", error);
-        loginButton.style.display = "inline-block";
-      }
-    } else {
-      // No existing accounts found, attempt to sign in immediately.
-      // This will trigger the Microsoft login flow if not already signed in.
-      try {
-        await signIn(); // Call signIn to initiate the process
-      } catch (error) {
-        console.error("Auto sign-in failed on page load:", error);
-        loginButton.style.display = "inline-block"; // Show button if auto sign-in fails
-      }
-    }
-  };
+  const loginButton = document.getElementById("loginButton");
+
+  const reportContainer = document.getElementById("reportContainer");
+
+
+
+  let embeddedReport = null;
+
+  let refreshIntervalId = null;
+
+
+
+  function embedReport(accessToken) {
+
+    powerbi.reset(reportContainer);
+
+    if (refreshIntervalId) {
+
+      clearInterval(refreshIntervalId);
+
+      refreshIntervalId = null;
+
+    }
+
+
+
+    const embedUrl = `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}`;
+
+    const models = window["powerbi-client"].models;
+
+
+
+    const embedConfig = {
+
+      type: "report",
+
+      id: reportId,
+
+      embedUrl: embedUrl,
+
+      accessToken: accessToken,
+
+      tokenType: models.TokenType.Aad,
+
+      settings: {
+
+        filterPaneEnabled: false,
+
+        navContentPaneEnabled: false,
+
+        background: models.BackgroundType.Transparent,
+
+        layoutType: models.LayoutType.Custom,
+
+        customLayout: {
+
+          displayOption: models.DisplayOption.FitToPage,
+
+        },
+
+      },
+
+    };
+
+
+
+    embeddedReport = powerbi.embed(reportContainer, embedConfig);
+
+
+
+    embeddedReport.on('loaded', () => {
+
+      console.log('Report loaded');
+
+    });
+
+
+
+    embeddedReport.on('error', (event) => {
+
+      console.error(event.detail);
+
+    });
+
+
+
+    // Refresh visuals every 60 seconds with refreshed token
+
+    refreshIntervalId = setInterval(async () => {
+
+      try {
+
+        const account = msalInstance.getActiveAccount();
+
+        if (!account) {
+
+          console.warn("No active account - clearing report and showing login button");
+
+          powerbi.reset(reportContainer);
+
+          loginButton.style.display = "inline-block";
+
+          clearInterval(refreshIntervalId);
+
+          return;
+
+        }
+
+        const newAccessToken = await acquireTokenSilentOrPopup(account);
+
+        embeddedReport.setAccessToken(newAccessToken);
+
+        await embeddedReport.refresh();
+
+        console.log('Report refreshed with new token');
+
+      } catch (err) {
+
+        console.error('Error refreshing report:', err);
+
+      }
+
+    }, 60000);
+
+  }
+
+
+
+  // Try silent token acquisition, fallback to popup if it fails
+
+  async function acquireTokenSilentOrPopup(account) {
+
+    try {
+
+      const response = await msalInstance.acquireTokenSilent({
+
+        scopes: powerBiScopes,
+
+        account: account,
+
+      });
+
+      console.log("Silent token acquired");
+
+      return response.accessToken;
+
+    } catch (silentError) {
+
+      console.warn("Silent token acquisition failed, falling back to popup", silentError);
+
+      const response = await msalInstance.acquireTokenPopup({
+
+        scopes: powerBiScopes,
+
+      });
+
+      console.log("Popup token acquired");
+
+      return response.accessToken;
+
+    }
+
+  }
+
+
+
+  async function signIn() {
+
+    try {
+
+      const loginResponse = await msalInstance.loginPopup({
+
+        scopes: powerBiScopes,
+
+      });
+
+      console.log("Login success:", loginResponse);
+
+
+
+      loginButton.style.display = "none";
+
+
+
+      const account = loginResponse.account;
+
+      msalInstance.setActiveAccount(account);
+
+
+
+      const accessToken = await acquireTokenSilentOrPopup(account);
+
+
+
+      embedReport(accessToken);
+
+    } catch (error) {
+
+      console.error("Login or token acquisition failed:", error);
+
+      alert("Login failed. See console for details.");
+
+    }
+
+  }
+
+
+
+  loginButton.addEventListener("click", signIn);
+
+
+
+  window.onload = async () => {
+
+    const accounts = msalInstance.getAllAccounts();
+
+    if (accounts.length > 0) {
+
+      msalInstance.setActiveAccount(accounts[0]);
+
+      try {
+
+        const accessToken = await acquireTokenSilentOrPopup(accounts[0]);
+
+        loginButton.style.display = "none";
+
+        embedReport(accessToken);
+
+      } catch {
+
+        loginButton.style.display = "inline-block";
+
+      }
+
+    }
+
+  };
+
 </script>
 
+
+
 </body>
+
 </html>
