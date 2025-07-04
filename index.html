@@ -148,7 +148,7 @@
       } catch (err) {
         console.error('Error refreshing report:', err);
       }
-    }, 60000);
+    }, 60000); // every 60 seconds
   }
 
   function startTokenRefreshInterval() {
@@ -179,7 +179,7 @@
         loginButton.style.display = "inline-block";
         clearIntervals();
       }
-    }, 80000); // 19 minutes
+    }, 1140000); // every 19 minutes
   }
 
   async function acquireTokenSilentOrPopup(account) {
@@ -187,8 +187,9 @@
       const response = await msalInstance.acquireTokenSilent({
         scopes: powerBiScopes,
         account: account,
+        forceRefresh: true  // <-- force new token every time
       });
-      console.log("Silent token acquired");
+      console.log("Silent token acquired (forced refresh)");
       return response.accessToken;
     } catch (silentError) {
       console.warn("Silent token acquisition failed, falling back to popup", silentError);
@@ -245,7 +246,7 @@
   };
 </script>
 
- <script>
+<script>
   window.addEventListener("error", function (event) {
     const message = event?.message || "";
     const target = event?.target?.src || "";
@@ -270,7 +271,6 @@
     }
   }, true);
 </script>
-
 
 </body>
 </html>
