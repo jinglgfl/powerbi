@@ -168,7 +168,8 @@
 
         // Update visible token info
         document.getElementById("tokenStatus").textContent = "Token refreshed at " + new Date().toLocaleTimeString();
-        document.getElementById("tokenSnippet").textContent = "Token snippet: " + newAccessToken.substring(0, 5) + "...";
+        document.getElementById("tokenSnippet").textContent = "Token snippet: " + newAccessToken.substring(0, 15) + "...";
+
 
         // Re-embed to fully refresh token use across services
         console.log('Re-embedding report with refreshed token');
