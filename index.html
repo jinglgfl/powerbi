@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>LGfL Support Site BI Statse</title>
+  <title>LGfL Support Site BI Stats</title>
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <script src="https://alcdn.msauth.net/browser/2.37.0/js/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/powerbi-client/dist/powerbi.min.js"></script>
@@ -61,13 +61,14 @@
 
   let embeddedReport = null;
   let refreshIntervalId = null;
+  let tokenRefreshIntervalId = null;
+  let currentAccessToken = null;
 
   function embedReport(accessToken) {
     powerbi.reset(reportContainer);
-    if (refreshIntervalId) {
-      clearInterval(refreshIntervalId);
-      refreshIntervalId = null;
-    }
+    clearIntervals();
+
+    currentAccessToken = accessToken;
 
     const embedUrl = `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}`;
     const models = window["powerbi-client"].models;
@@ -99,30 +100,67 @@
       console.error(event.detail);
       // If there's an error during embed (e.g., token expired), show login button
       loginButton.style.display = "inline-block";
+      clearIntervals();
     });
 
-    // Refresh visuals every 60 seconds with refreshed token
+    // Start the refresh intervals
+    startRefreshInterval();
+    startTokenRefreshInterval();
+  }
+
+  function clearIntervals() {
+    if (refreshIntervalId) {
+      clearInterval(refreshIntervalId);
+      refreshIntervalId = null;
+    }
+    if (tokenRefreshIntervalId) {
+      clearInterval(tokenRefreshIntervalId);
+      tokenRefreshIntervalId = null;
+    }
+  }
+
+  function startRefreshInterval() {
+    // Refresh report visuals every 60 seconds
     refreshIntervalId = setInterval(async () => {
+      try {
+        if (embeddedReport && currentAccessToken) {
+          await embeddedReport.refresh();
+          console.log('Report refreshed');
+        }
+      } catch (err) {
+        console.error('Error refreshing report:', err);
+      }
+    }, 60000); // 60 seconds
+  }
+
+  function startTokenRefreshInterval() {
+    // Refresh token every 19 minutes (19 * 60 * 1000 = 1140000ms)
+    tokenRefreshIntervalId = setInterval(async () => {
       try {
         const account = msalInstance.getActiveAccount();
         if (!account) {
           console.warn("No active account - clearing report and showing login button");
           powerbi.reset(reportContainer);
           loginButton.style.display = "inline-block";
-          clearInterval(refreshIntervalId);
+          clearIntervals();
           return;
         }
+        
         const newAccessToken = await acquireTokenSilentOrPopup(account);
-        embeddedReport.setAccessToken(newAccessToken);
-        await embeddedReport.refresh();
-        console.log('Report refreshed with new token');
+        currentAccessToken = newAccessToken;
+        
+        // Update the embedded report with the new token
+        if (embeddedReport) {
+          embeddedReport.setAccessToken(newAccessToken);
+          console.log('Report token updated');
+        }
       } catch (err) {
-        console.error('Error refreshing report:', err);
-        // If refresh fails, consider re-showing login button
+        console.error('Error refreshing token:', err);
+        // If token refresh fails, consider re-showing login button
         loginButton.style.display = "inline-block";
-        clearInterval(refreshIntervalId);
+        clearIntervals();
       }
-    }, 60000);
+    }, 1140000); // 19 minutes
   }
 
   // Try silent token acquisition, fallback to popup if it fails
