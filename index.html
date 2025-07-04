@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <title>LGfL Support Site BI Statss</title>
+    <title>LGfL Support Site BI Stats</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <script src="https://alcdn.msauth.net/browser/2.37.0/js/msal-browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/powerbi-client/dist/powerbi.min.js"></script>
@@ -72,11 +72,7 @@
         try {
             const account = msalInstance.getActiveAccount();
             if (!account) {
-                // This scenario indicates a problem: no active account for silent renewal.
-                // It means the user's session might have completely expired.
                 console.error("No active MSAL account found for silent token refresh in accessTokenProvider.");
-                // You might throw an error to signal to the Power BI SDK that token acquisition failed.
-                // The Power BI report might then display an error.
                 throw new Error("No active account for silent token renewal.");
             }
 
@@ -88,15 +84,15 @@
             return response.accessToken;
         } catch (error) {
             console.error("Error acquiring new token silently in accessTokenProvider:", error);
-            // Re-throw the error so the Power BI SDK knows the token refresh failed.
             throw error;
         }
     }
 
     /**
-     * Embeds the Power BI report. The accessTokenProvider handles token renewals automatically.
+     * Embeds the Power BI report. Requires an initial accessToken.
+     * The accessTokenProvider handles subsequent token renewals automatically.
      */
-    function embedReport() {
+    function embedReport(initialAccessToken) { // Accepts the initial access token
         powerbi.reset(reportContainer);
 
         // Clear any existing report visual refresh interval before embedding a new report
@@ -112,7 +108,7 @@
             type: "report",
             id: reportId,
             embedUrl: embedUrl,
-            accessToken: null, // Initial token will be handled by Power BI calling accessTokenProvider
+            accessToken: initialAccessToken, // *** FIXED: Pass the initial access token here ***
             tokenType: models.TokenType.Aad,
             settings: {
                 filterPaneEnabled: false,
@@ -123,15 +119,14 @@
                     displayOption: models.DisplayOption.FitToPage,
                 },
             },
-            // *** KEY CHANGE: Use accessTokenProvider for token renewals ***
-            accessTokenProvider: getNewAccessToken
+            accessTokenProvider: getNewAccessToken // The provider for subsequent renewals
         };
 
         embeddedReport = powerbi.embed(reportContainer, embedConfig);
 
         embeddedReport.on('loaded', () => {
             console.log('Report loaded');
-            // *** NEW: Start a separate interval for refreshing report visuals if needed ***
+            // Start a separate interval for refreshing report visuals if needed
             // This interval is ONLY for refreshing the *visuals* of the report,
             // not for token management. Adjust the time based on your data refresh frequency.
             // Example: Refresh visuals every 5 minutes (300000 ms)
@@ -143,17 +138,14 @@
                     }
                 } catch (err) {
                     console.error('Error refreshing report visuals:', err);
-                    // Handle visual refresh errors, e.g., if report is no longer valid
                 }
             }, 300000); // 5 minutes (adjust as needed)
         });
 
         embeddedReport.on('error', (event) => {
             console.error('Power BI Embedded Error:', event.detail);
-            // If there's an error during embed or runtime, display the login button
             loginButton.style.display = "inline-block";
-            powerbi.reset(reportContainer); // Clear the report container
-            // Also stop any ongoing visual refresh interval
+            powerbi.reset(reportContainer);
             if (reportRefreshIntervalId) {
                 clearInterval(reportRefreshIntervalId);
                 reportRefreshIntervalId = null;
@@ -175,7 +167,6 @@
             return response.accessToken;
         } catch (silentError) {
             console.warn("Silent token acquisition failed for initial embed, falling back to popup.", silentError);
-            // Only fall back to popup if it's the *initial* login attempt or a re-auth
             const response = await msalInstance.acquireTokenPopup({
                 scopes: powerBiScopes,
             });
@@ -189,7 +180,6 @@
      */
     async function signIn() {
         try {
-            // Use loginPopup for initial interactive login
             const loginResponse = await msalInstance.loginPopup({
                 scopes: powerBiScopes,
             });
@@ -200,15 +190,13 @@
             const account = loginResponse.account;
             msalInstance.setActiveAccount(account);
 
-            // You don't necessarily *need* to acquire the first token here and pass it.
-            // The embed function will call accessTokenProvider immediately if accessToken is null.
-            // However, explicitly acquiring it here ensures we have one before calling embed.
+            // Acquire the initial token after successful login
             const accessToken = await acquireTokenSilentOrPopup(account);
-            embedReport(); // Now call embedReport without passing accessToken directly
+            embedReport(accessToken); // *** FIXED: Pass the acquired token to embedReport ***
         } catch (error) {
             console.error("Login or initial token acquisition failed:", error);
             alert("Login failed. See console for details.");
-            loginButton.style.display = "inline-block"; // Ensure button is shown if login fails
+            loginButton.style.display = "inline-block";
         }
     }
 
@@ -220,23 +208,21 @@
             msalInstance.setActiveAccount(accounts[0]);
             try {
                 // Attempt to acquire token silently for existing account on load
-                // If this fails, the user's session is likely expired and they need to re-authenticate.
                 const accessToken = await acquireTokenSilentOrPopup(accounts[0]);
                 loginButton.style.display = "none";
-                embedReport();
+                embedReport(accessToken); // *** FIXED: Pass the acquired token to embedReport ***
             } catch (error) {
                 console.warn("Could not acquire token for existing account on load, prompting full sign-in.", error);
                 loginButton.style.display = "inline-block";
-                // If silent acquisition fails for an existing account, reset Power BI and show login button
                 powerbi.reset(reportContainer);
             }
         } else {
             // No existing accounts found, attempt to sign in immediately.
             try {
-                await signIn(); // Call signIn to initiate the process (will use popup if needed)
+                await signIn();
             } catch (error) {
                 console.error("Auto sign-in failed on page load:", error);
-                loginButton.style.display = "inline-block"; // Show button if auto sign-in fails
+                loginButton.style.display = "inline-block";
             }
         }
     };
