@@ -245,5 +245,32 @@
   };
 </script>
 
+ <script>
+  window.addEventListener("error", function (event) {
+    const message = event?.message || "";
+    const target = event?.target?.src || "";
+
+    const is401 =
+      message.includes("401") ||
+      target.includes("QueryExecutionService") ||
+      event?.error?.status === 401;
+
+    if (is401) {
+      console.warn("401 error detected — refreshing page in 3 seconds...");
+
+      const statusDiv = document.getElementById("tokenStatus");
+      if (statusDiv) {
+        statusDiv.textContent = "401 error detected — refreshing page soon...";
+        statusDiv.style.color = "orange";
+      }
+
+      setTimeout(() => {
+        location.reload();
+      }, 3000);
+    }
+  }, true);
+</script>
+
+
 </body>
 </html>
