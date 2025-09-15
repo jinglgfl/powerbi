@@ -1,0 +1,284 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LGfL Support Site BI Stats</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <script src="https://alcdn.msauth.net/browser/2.37.0/js/msal-browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/powerbi-client/dist/powerbi.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #111217;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+    #reportContainer {
+      width: 100vw;
+      height: 100vh;
+    }
+    #loginButton {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      padding: 8px 16px;
+      background: #0078d7;
+      border: none;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      border-radius: 4px;
+      z-index: 1000;
+    }
+    iframe {
+      border: 0 !important;
+    }
+    #tokenStatus, #tokenSnippet {
+      position: fixed;
+      right: 10px;
+      font-size: 11px;
+      font-family: monospace;
+      z-index: 1000;
+      background: #222;
+      padding: 6px 10px;
+      border-radius: 5px;
+    }
+    #tokenStatus {
+      bottom: 40px;
+      color: #0f0;
+    }
+    #tokenSnippet {
+      bottom: 10px;
+      color: #6cf;
+    }
+  </style>
+</head>
+<body>
+
+<button id="loginButton" style="display: none;">Sign In</button>
+<div id="reportContainer"></div>
+<div id="tokenStatus" style="display:none;">Token status: Not refreshed yet</div>
+<div id="tokenSnippet" style="display:none;">Token snippet: N/A</div>
+
+<script>
+  const msalConfig = {
+    auth: {
+      clientId: "126b1e36-bd92-431a-b49f-c75397c1ab9e",
+      redirectUri: "https://londongridforlearning.github.io/lgfl-videowall/powerbi.html",
+      authority: "https://login.microsoftonline.com/f1093b3c-cd4b-425b-bce8-b5c5dac62269"
+    },
+     cache: {
+      cacheLocation: "localStorage" // This is the key change
+    }
+  };
+
+  const queryString = window.location.search;
+  const urlParams = new URLSearchParams(queryString);
+  const powerBiScopes = ["https://analysis.windows.net/powerbi/api/Report.Read.All"];
+  const reportId = urlParams.get('reportId');
+  const groupId = urlParams.get('groupId');
+  const pageId = urlParams.get('pageId');
+
+  const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+  const loginButton = document.getElementById("loginButton");
+  const reportContainer = document.getElementById("reportContainer");
+
+  let embeddedReport = null;
+  let refreshIntervalId = null;
+  let tokenRefreshIntervalId = null;
+  let currentAccessToken = null;
+
+  function embedReport(accessToken) {
+    powerbi.reset(reportContainer);
+    clearIntervals();
+
+    currentAccessToken = accessToken;
+
+    const embedUrl = `https://app.powerbi.com/reportEmbed?reportId=${reportId}&groupId=${groupId}`;
+    const models = window["powerbi-client"].models;
+
+    const embedConfig = {
+      type: "report",
+      id: reportId,
+      embedUrl: embedUrl,
+      accessToken: accessToken,
+      tokenType: models.TokenType.Aad,
+      settings: {
+        filterPaneEnabled: false,
+        navContentPaneEnabled: false,
+        background: models.BackgroundType.Transparent,
+        layoutType: models.LayoutType.Custom,
+        customLayout: {
+          displayOption: models.DisplayOption.FitToPage,
+        },
+      },
+    };
+
+    embeddedReport = powerbi.embed(reportContainer, embedConfig);
+
+    embeddedReport.on('loaded', () => {
+      console.log('Report loaded');
+    });
+
+    embeddedReport.on('error', (event) => {
+      console.error(event.detail);
+      loginButton.style.display = "inline-block";
+      clearIntervals();
+    });
+
+    startRefreshInterval();
+    startTokenRefreshInterval();
+  }
+
+  function clearIntervals() {
+    if (refreshIntervalId) {
+      clearInterval(refreshIntervalId);
+      refreshIntervalId = null;
+    }
+    if (tokenRefreshIntervalId) {
+      clearInterval(tokenRefreshIntervalId);
+      tokenRefreshIntervalId = null;
+    }
+  }
+
+  function startRefreshInterval() {
+    refreshIntervalId = setInterval(async () => {
+      try {
+        if (embeddedReport && currentAccessToken) {
+          await embeddedReport.refresh();
+          console.log('Report refreshed');
+        }
+      } catch (err) {
+        console.error('Error refreshing report:', err);
+      }
+    }, 60000); // every 60 seconds
+  }
+
+  function startTokenRefreshInterval() {
+    tokenRefreshIntervalId = setInterval(async () => {
+      try {
+        const account = msalInstance.getActiveAccount();
+        if (!account) {
+          console.warn("No active account - clearing report and showing login button");
+          powerbi.reset(reportContainer);
+          loginButton.style.display = "inline-block";
+          clearIntervals();
+          return;
+        }
+
+        const newAccessToken = await acquireTokenSilentOrPopup(account);
+        currentAccessToken = newAccessToken;
+
+        // Update visible token info
+        document.getElementById("tokenStatus").textContent = "Token refreshed at " + new Date().toLocaleTimeString();
+        document.getElementById("tokenSnippet").textContent = "Token snippet: " + newAccessToken.substring(0, 15) + "...";
+
+
+        // Re-embed to fully refresh token use across services
+        console.log('Re-embedding report with refreshed token');
+        embedReport(newAccessToken);
+
+      } catch (err) {
+        console.error('Error refreshing token:', err);
+        loginButton.style.display = "inline-block";
+        clearIntervals();
+      }
+    }, 1140000); // every 19 minutes
+  }
+
+  async function acquireTokenSilentOrPopup(account) {
+    try {
+      const response = await msalInstance.acquireTokenSilent({
+        scopes: powerBiScopes,
+        account: account,
+        forceRefresh: true  // <-- force new token every time
+      });
+      console.log("Silent token acquired (forced refresh)");
+      return response.accessToken;
+    } catch (silentError) {
+      console.warn("Silent token acquisition failed, falling back to popup", silentError);
+      const response = await msalInstance.acquireTokenPopup({
+        scopes: powerBiScopes,
+      });
+      console.log("Popup token acquired");
+      return response.accessToken;
+    }
+  }
+
+  async function signIn() {
+    try {
+      const loginResponse = await msalInstance.loginPopup({
+        scopes: powerBiScopes,
+      });
+      console.log("Login success:", loginResponse);
+
+      loginButton.style.display = "none";
+      const account = loginResponse.account;
+      msalInstance.setActiveAccount(account);
+
+      const accessToken = await acquireTokenSilentOrPopup(account);
+      embedReport(accessToken);
+    } catch (error) {
+      console.error("Login or token acquisition failed:", error);
+      alert("Login failed. See console for details.");
+      loginButton.style.display = "inline-block";
+    }
+  }
+
+  loginButton.addEventListener("click", signIn);
+
+  window.onload = async () => {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      msalInstance.setActiveAccount(accounts[0]);
+      try {
+        const accessToken = await acquireTokenSilentOrPopup(accounts[0]);
+        loginButton.style.display = "none";
+        embedReport(accessToken);
+      } catch (error) {
+        console.warn("Could not acquire token for existing account", error);
+        loginButton.style.display = "inline-block";
+      }
+    } else {
+      try {
+        await signIn();
+      } catch (error) {
+        console.error("Auto sign-in failed on page load:", error);
+        loginButton.style.display = "inline-block";
+      }
+    }
+  };
+</script>
+
+<script>
+  window.addEventListener("error", function (event) {
+    const message = event?.message || "";
+    const target = event?.target?.src || "";
+
+    const is401 =
+      message.includes("401") ||
+      target.includes("QueryExecutionService") ||
+      event?.error?.status === 401;
+
+    if (is401) {
+      console.warn("401 error detected — refreshing page in 3 seconds...");
+
+      const statusDiv = document.getElementById("tokenStatus");
+      if (statusDiv) {
+        statusDiv.textContent = "401 error detected — refreshing page soon...";
+        statusDiv.style.color = "orange";
+      }
+
+      setTimeout(() => {
+        location.reload();
+      }, 3000);
+    }
+  }, true);
+</script>
+
+</body>
+</html>
